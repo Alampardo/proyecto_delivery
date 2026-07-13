@@ -69,6 +69,9 @@ class OrderConsumer(AsyncWebsocketConsumer):
     async def delivery_status_changed(self, event):
         await self.send(text_data=json.dumps({'type': 'delivery_status_changed', 'data': event['data']}))
 
+    async def order_assigned(self, event):
+        await self.send(text_data=json.dumps({'type': 'order_assigned', 'data': event['data']}))
+
     # ── Helpers ─────────────────────────────────────────────────────────────
 
     @database_sync_to_async

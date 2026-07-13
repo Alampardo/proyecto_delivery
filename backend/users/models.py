@@ -1,5 +1,9 @@
+import uuid
+from datetime import timedelta
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -16,6 +20,7 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault('role', User.Role.ADMIN)
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_email_verified', True)
         return self.create_user(email, password, **extra_fields)
 
 
@@ -26,14 +31,15 @@ class User(AbstractBaseUser, PermissionsMixin):
         CLIENT   = 'client',   'Cliente'
         OWNER    = 'owner',    'Dueño de Negocio'
 
-    email      = models.EmailField(unique=True)
-    first_name = models.CharField(max_length=100)
-    last_name  = models.CharField(max_length=100)
-    role       = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
-    phone      = models.CharField(max_length=20, blank=True)
-    is_active  = models.BooleanField(default=True)
-    is_staff   = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    email             = models.EmailField(unique=True)
+    first_name        = models.CharField(max_length=100)
+    last_name         = models.CharField(max_length=100)
+    role              = models.CharField(max_length=20, choices=Role.choices, default=Role.CLIENT)
+    phone             = models.CharField(max_length=20, blank=True)
+    is_active         = models.BooleanField(default=True)
+    is_staff          = models.BooleanField(default=False)
+    is_email_verified = models.BooleanField(default=False, verbose_name='Email verificado')
+    created_at        = models.DateTimeField(auto_now_add=True)
 
     objects = UserManager()
 
@@ -88,3 +94,40 @@ class PushSubscription(models.Model):
             'endpoint': self.endpoint,
             'keys': {'p256dh': self.p256dh, 'auth': self.auth},
         }
+
+
+class EmailVerificationToken(models.Model):
+    user       = models.OneToOneField(
+        'User', on_delete=models.CASCADE, related_name='email_verification'
+    )
+    token      = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    expires_at = models.DateTimeField()
+    is_used    = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Token de verificación de email'
+        verbose_name_plural = 'Tokens de verificación de email'
+
+    @property
+    def is_valid(self):
+        return not self.is_used and timezone.now() < self.expires_at
+
+
+class PasswordResetToken(models.Model):
+    user       = models.ForeignKey(
+        'User', on_delete=models.CASCADE, related_name='password_reset_tokens'
+    )
+    token      = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    expires_at = models.DateTimeField()
+    is_used    = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name        = 'Token de restablecimiento de contraseña'
+        verbose_name_plural = 'Tokens de restablecimiento de contraseña'
+        ordering            = ['-created_at']
+
+    @property
+    def is_valid(self):
+        return not self.is_used and timezone.now() < self.expires_at

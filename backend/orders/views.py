@@ -1,3 +1,4 @@
+from django.db.models import Count, F, Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -5,8 +6,9 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 
 from businesses.permissions import IsAdmin, IsBusinessOwner, IsOwnerOfBusiness
-from .models import BusinessOrder, Order
+from .models import BusinessOrder, Order, OrderItem
 from .serializers import (
+    AssignDeliverySerializer,
     BusinessOrderSerializer,
     BusinessOrderStatusSerializer,
     OrderCreateSerializer,
@@ -158,3 +160,104 @@ class AdminOrderViewSet(viewsets.ReadOnlyModelViewSet):
         if date:
             qs = qs.filter(created_at__date=date)
         return qs
+
+    @action(detail=False, methods=['get'], url_path='reports')
+    def reports(self, request):
+        """
+        GET /api/admin/orders/reports/?year=&month=
+        Reporte mensual: pedidos y monto por negocio, productos más pedidos,
+        ticket promedio y comparación contra el mes anterior.
+        Por defecto usa el mes/año actual. Excluye pedidos cancelados.
+        """
+        now   = timezone.now()
+        year  = int(request.query_params.get('year', now.year))
+        month = int(request.query_params.get('month', now.month))
+
+        def month_totals(y, m):
+            qs = Order.objects.filter(
+                created_at__year=y, created_at__month=m,
+            ).exclude(status=Order.Status.CANCELLED)
+            total_orders = qs.count()
+            total_amount = qs.aggregate(s=Sum('total'))['s'] or 0
+            return total_orders, total_amount
+
+        total_orders, total_amount = month_totals(year, month)
+
+        prev_month = 12 if month == 1 else month - 1
+        prev_year  = year - 1 if month == 1 else year
+        prev_orders, prev_amount = month_totals(prev_year, prev_month)
+
+        def pct_change(current, previous):
+            if not previous:
+                return None
+            return round((current - previous) / previous * 100, 1)
+
+        by_business = list(
+            BusinessOrder.objects
+            .filter(order__created_at__year=year, order__created_at__month=month)
+            .exclude(status=BusinessOrder.Status.CANCELLED)
+            .values('business_id', 'business__name')
+            .annotate(total_pedidos=Count('id'), monto=Sum('subtotal'))
+            .order_by('-monto')
+        )
+
+        top_products = list(
+            OrderItem.objects
+            .filter(
+                business_order__order__created_at__year=year,
+                business_order__order__created_at__month=month,
+            )
+            .exclude(business_order__status=BusinessOrder.Status.CANCELLED)
+            .values('product_id', 'product__name')
+            .annotate(
+                total_cantidad=Sum('quantity'),
+                total_monto=Sum(F('quantity') * F('unit_price')),
+            )
+            .order_by('-total_cantidad')[:10]
+        )
+
+        ticket_promedio = round(total_amount / total_orders, 2) if total_orders else 0
+
+        return Response({
+            'year': year,
+            'month': month,
+            'total_orders': total_orders,
+            'total_amount': total_amount,
+            'ticket_promedio': ticket_promedio,
+            'previous_month': {
+                'year': prev_year,
+                'month': prev_month,
+                'total_orders': prev_orders,
+                'total_amount': prev_amount,
+            },
+            'variacion_pedidos_pct': pct_change(total_orders, prev_orders),
+            'variacion_monto_pct': pct_change(total_amount, prev_amount),
+            'by_business': by_business,
+            'top_products': top_products,
+        })
+
+    @action(detail=True, methods=['patch'], url_path='assign-delivery')
+    def assign_delivery(self, request, pk=None):
+        """
+        PATCH /api/admin/orders/{id}/assign-delivery/
+        Body: { "delivery": <user_id> }
+        Asigna un repartidor al pedido y notifica por WebSocket.
+        """
+        order      = self.get_object()
+        serializer = AssignDeliverySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        delivery_user = serializer.validated_data['delivery']
+
+        order.delivery = delivery_user
+        order.status   = Order.Status.ASSIGNED
+        order.save(update_fields=['delivery', 'status', 'updated_at'])
+
+        data = OrderSerializer(order).data
+
+        from .signals import _broadcast
+        _broadcast(f'delivery_{delivery_user.pk}', 'order_assigned', data)
+        _broadcast('admin_orders', 'order_status_changed', {
+            'id': order.id, 'status': order.status, 'status_display': order.get_status_display(),
+        })
+
+        return Response(data)

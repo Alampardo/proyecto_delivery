@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { getDeliveries, generateCode, generateBizToken } from '../../api/deliveries'
-import { getAdminOrders } from '../../api/orders'
+import {
+  getAdminOrders, getAdminReports, assignDelivery,
+  getBusinessPayouts, markBusinessPaid, getDeliveryPayouts, markDeliveryPaid,
+} from '../../api/orders'
 import { getAdminBusinesses, createAdminBusiness, updateAdminBusiness, deleteAdminBusiness } from '../../api/adminBusinesses'
+import { getAdminPricing, updateAdminPricing, getAdminRings, updateRing } from '../../api/pricing'
 import { useOrdersWebSocket } from '../../hooks/useWebSocket'
 import Badge from '../../components/ui/Badge'
 import Button from '../../components/ui/Button'
@@ -42,18 +46,58 @@ export default function AdminDashboard() {
   const [bizForm, setBizForm]           = useState(emptyBizForm())
   const [savingBiz, setSavingBiz]       = useState(false)
   const [realtimeEvents, setRealtimeEvents] = useState([])
+  const [deliveryFilter, setDeliveryFilter] = useState('all') // 'all' | 'active' | 'inactive'
+  const [reports, setReports]         = useState(null)
+  const [loadingReports, setLoadingReports] = useState(false)
+  const now = new Date()
+  const [reportYear, setReportYear]   = useState(now.getFullYear())
+  const [reportMonth, setReportMonth] = useState(now.getMonth() + 1)
+
+  // Envíos (pricing) y pagos pendientes
+  const [pricingConfig, setPricingConfig]   = useState(null)
+  const [pricingForm, setPricingForm]       = useState(null)
+  const [savingPricing, setSavingPricing]   = useState(false)
+  const [rings, setRings]                   = useState([])
+  const [businessPayouts, setBusinessPayouts] = useState([])
+  const [deliveryPayouts, setDeliveryPayouts] = useState([])
+  const [loadingPayouts, setLoadingPayouts]   = useState(false)
+  const [assignSelection, setAssignSelection] = useState({}) // { [orderId]: deliveryUserId }
+
+  const loadDeliveries  = useCallback(async () => { try { const { data } = await getDeliveries(); setDeliveries(data) } catch {} }, [])
+  const loadOrders      = useCallback(async () => { try { const { data } = await getAdminOrders(); setOrders(data) } catch { toast.error('Error cargando pedidos') } }, [])
+  const loadBusinesses  = useCallback(async () => { try { const { data } = await getAdminBusinesses(); setBusinesses(data) } catch {} }, [])
+  const loadReports     = useCallback(async () => {
+    setLoadingReports(true)
+    try { const { data } = await getAdminReports({ year: reportYear, month: reportMonth }); setReports(data) }
+    catch { toast.error('Error cargando reportes') }
+    finally { setLoadingReports(false) }
+  }, [reportYear, reportMonth])
+  const loadPricing     = useCallback(async () => {
+    try {
+      const [cfg, ringsRes] = await Promise.all([getAdminPricing(), getAdminRings()])
+      setPricingConfig(cfg.data)
+      setPricingForm(cfg.data)
+      setRings(ringsRes.data)
+    } catch { toast.error('Error cargando configuración de envío') }
+  }, [])
+  const loadPayouts     = useCallback(async () => {
+    setLoadingPayouts(true)
+    try {
+      const [biz, del] = await Promise.all([getBusinessPayouts(), getDeliveryPayouts()])
+      setBusinessPayouts(biz.data)
+      setDeliveryPayouts(del.data)
+    } catch { toast.error('Error cargando pagos pendientes') }
+    finally { setLoadingPayouts(false) }
+  }, [])
 
   // ── WebSocket ──────────────────────────────────────────────────────────
   const handleWsMessage = useCallback((msg) => {
     const ts = new Date().toLocaleTimeString('es-BO')
 
     if (msg.type === 'new_order') {
-      toast(`🆕 Nuevo pedido de ${msg.data.client_name}`, { icon: '📦' })
-      setOrders((prev) => {
-        const exists = prev.find((o) => o.id === msg.data.order_id)
-        return exists ? prev : prev
-      })
-      setRealtimeEvents((e) => [{ ts, text: `Nuevo pedido #${msg.data.id} — ${msg.data.business_name}`, type: 'order' }, ...e.slice(0, 19)])
+      toast(`Nuevo pedido de ${msg.data.client_name}`, { icon: '📦' })
+      loadOrders()
+      setRealtimeEvents((e) => [{ ts, text: `Nuevo pedido #${msg.data.order_id} — ${msg.data.business_name}`, type: 'order' }, ...e.slice(0, 19)])
     }
     if (msg.type === 'order_status_changed') {
       setRealtimeEvents((e) => [{ ts, text: `Pedido #${msg.data.id} → ${msg.data.status_display}`, type: 'status' }, ...e.slice(0, 19)])
@@ -67,16 +111,15 @@ export default function AdminDashboard() {
       )
       setRealtimeEvents((e) => [{ ts, text: `🛵 ${msg.data.full_name} → ${msg.data.status_display}`, type: 'delivery' }, ...e.slice(0, 19)])
     }
-  }, [])
+  }, [loadOrders])
 
   useOrdersWebSocket(handleWsMessage, true)
 
-  const loadDeliveries  = useCallback(async () => { try { const { data } = await getDeliveries(); setDeliveries(data) } catch {} }, [])
-  const loadOrders      = useCallback(async () => { try { const { data } = await getAdminOrders(); setOrders(data) } catch { toast.error('Error cargando pedidos') } }, [])
-  const loadBusinesses  = useCallback(async () => { try { const { data } = await getAdminBusinesses(); setBusinesses(data) } catch {} }, [])
-
   useEffect(() => { loadDeliveries(); loadBusinesses() }, [])
   useEffect(() => { if (tab === 'orders') loadOrders() }, [tab])
+  useEffect(() => { if (tab === 'reports') loadReports() }, [tab, reportYear, reportMonth])
+  useEffect(() => { if (tab === 'pricing') loadPricing() }, [tab, loadPricing])
+  useEffect(() => { if (tab === 'payouts') loadPayouts() }, [tab, loadPayouts])
 
   const handleGenerateCode = async () => {
     setLoadingCode(true)
@@ -112,13 +155,57 @@ export default function AdminDashboard() {
     catch { toast.error('Error') }
   }
 
+  const handleSavePricing = async (e) => {
+    e.preventDefault()
+    setSavingPricing(true)
+    const fd = new FormData()
+    const editableFields = [
+      'is_rainy_day', 'is_holiday', 'rain_surcharge', 'holiday_surcharge',
+      'night_surcharge', 'night_start', 'night_end', 'admin_commission_pct',
+    ]
+    editableFields.forEach((k) => fd.append(k, pricingForm[k]))
+    if (pricingForm.admin_qr_image instanceof File) fd.append('admin_qr_image', pricingForm.admin_qr_image)
+    try {
+      await updateAdminPricing(fd)
+      toast.success('Configuración de envío guardada')
+      loadPricing()
+    } catch { toast.error('Error al guardar configuración') } finally { setSavingPricing(false) }
+  }
+
+  const handleUpdateRingPrice = async (ring) => {
+    try { await updateRing(ring.id, ring.price); toast.success(`Anillo ${ring.number} actualizado`) }
+    catch { toast.error('Error al actualizar anillo') }
+  }
+
+  const handleAssignDelivery = async (orderId) => {
+    const deliveryId = assignSelection[orderId]
+    if (!deliveryId) { toast.error('Selecciona un repartidor'); return }
+    try { await assignDelivery(orderId, deliveryId); toast.success('Repartidor asignado'); loadOrders() }
+    catch { toast.error('Error al asignar repartidor') }
+  }
+
+  const handleMarkBusinessPaid = async (businessId) => {
+    try { await markBusinessPaid(businessId); toast.success('Marcado como pagado'); loadPayouts() }
+    catch { toast.error('Error') }
+  }
+
+  const handleMarkDeliveryPaid = async (userId) => {
+    try { await markDeliveryPaid(userId); toast.success('Marcado como pagado'); loadPayouts() }
+    catch { toast.error('Error') }
+  }
+
   const TABS = [
     { key: 'deliveries', label: '🛵 Deliverys' },
     { key: 'businesses', label: '🏪 Negocios' },
     { key: 'codes',      label: '🔑 Códigos' },
     { key: 'orders',     label: '📦 Pedidos' },
+    { key: 'reports',    label: '📊 Reportes' },
+    { key: 'pricing',    label: '⚙️ Envíos' },
+    { key: 'payouts',    label: '💰 Pagos' },
     { key: 'realtime',   label: '⚡ Tiempo real' },
   ]
+
+  const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -151,36 +238,83 @@ export default function AdminDashboard() {
       <main className="max-w-5xl mx-auto px-4 py-6">
 
         {/* DELIVERYS */}
-        {tab === 'deliveries' && (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-bold text-gray-900">Repartidores</h2>
-              <span className="text-xs text-gray-400">Actualiza en tiempo real via WebSocket</span>
-            </div>
-            {deliveries.length === 0 ? (
-              <div className="text-center py-16 text-gray-400"><p className="text-4xl mb-2">🛵</p><p>Sin repartidores</p></div>
-            ) : deliveries.map((d) => {
-              const cfg = STATUS_CONFIG[d.status] ?? STATUS_CONFIG.fuera_servicio
-              return (
-                <div key={d.id} className="bg-white rounded-2xl p-4 shadow-sm flex items-center gap-4">
-                  <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center text-xl font-bold text-orange-500">{d.full_name[0]}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-900">{d.full_name}</p>
-                    <p className="text-sm text-gray-500 truncate">{d.phone} • {d.license_plate}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Badge color={cfg.color} dot>{cfg.label}</Badge>
-                    {d.whatsapp_url && (
-                      <a href={d.whatsapp_url} target="_blank" rel="noreferrer" className="bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1">
-                        <span>📲</span> WhatsApp
-                      </a>
-                    )}
-                  </div>
+        {tab === 'deliveries' && (() => {
+          const activeStatuses  = ['disponible', 'ocupado']
+          const filtered = deliveries.filter((d) =>
+            deliveryFilter === 'all'      ? true :
+            deliveryFilter === 'active'   ? activeStatuses.includes(d.status) :
+                                            d.status === 'fuera_servicio'
+          )
+          const countAll      = deliveries.length
+          const countActive   = deliveries.filter((d) => activeStatuses.includes(d.status)).length
+          const countInactive = deliveries.filter((d) => d.status === 'fuera_servicio').length
+
+          const filterBtns = [
+            { key: 'all',      label: 'Todos',           count: countAll },
+            { key: 'active',   label: '🟢 En turno',     count: countActive },
+            { key: 'inactive', label: '⚫ Fuera turno',  count: countInactive },
+          ]
+
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+                <h2 className="font-bold text-gray-900">Repartidores</h2>
+                <span className="text-xs text-gray-400 hidden sm:block">Actualiza en tiempo real via WebSocket</span>
+              </div>
+
+              {/* Filtros */}
+              <div className="flex gap-2 flex-wrap">
+                {filterBtns.map(({ key, label, count }) => (
+                  <button
+                    key={key}
+                    onClick={() => setDeliveryFilter(key)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                      deliveryFilter === key
+                        ? 'bg-orange-500 text-white shadow-sm'
+                        : 'bg-white text-gray-600 border border-gray-200 hover:border-orange-300 hover:text-orange-600'
+                    }`}
+                  >
+                    {label}
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                      deliveryFilter === key ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {filtered.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <p className="text-4xl mb-2">🛵</p>
+                  <p>{deliveries.length === 0 ? 'Sin repartidores registrados' : 'No hay repartidores en esta categoría'}</p>
                 </div>
-              )
-            })}
-          </div>
-        )}
+              ) : filtered.map((d) => {
+                const cfg = STATUS_CONFIG[d.status] ?? STATUS_CONFIG.fuera_servicio
+                return (
+                  <div key={d.id} className={`bg-white rounded-2xl p-4 shadow-sm flex items-center gap-4 transition-opacity ${d.status === 'fuera_servicio' ? 'opacity-60' : ''}`}>
+                    <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center text-xl font-bold text-orange-500 shrink-0">
+                      {d.full_name[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-gray-900">{d.full_name}</p>
+                      <p className="text-sm text-gray-500 truncate">{d.phone} • {d.license_plate}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge color={cfg.color} dot>{cfg.label}</Badge>
+                      {d.whatsapp_url && (
+                        <a href={d.whatsapp_url} target="_blank" rel="noreferrer"
+                          className="bg-green-500 hover:bg-green-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-colors flex items-center gap-1">
+                          <span>📲</span> WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
         {/* NEGOCIOS */}
         {tab === 'businesses' && (
@@ -224,7 +358,8 @@ export default function AdminDashboard() {
             <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4">
               <h3 className="font-bold text-gray-900">🛵 Código para Delivery</h3>
               <p className="text-sm text-gray-500">Genera un código de registro para un nuevo repartidor.</p>
-              <Button onClick={handleGenerateCode} loading={loadingCode}>Generar código</Button>
+              <Button onClick={handleGenerateCode}  loading={loadingCode}>Generar código</Button>
+              
               {generatedCode && (
                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
                   <p className="text-xs text-orange-500 font-semibold mb-1">Código:</p>
@@ -234,7 +369,10 @@ export default function AdminDashboard() {
               )}
             </div>
             <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+              <Button type='secundary' size='lg'> </Button>
+
               <h3 className="font-bold text-gray-900">🏪 Token para Dueño</h3>
+              <p className="text-sm text-gray-500">Genera un codigo de registro para un nuevo repartidor.</p>
               <select value={selectedBusiness} onChange={(e) => setSelectedBusiness(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200">
                 <option value="">Seleccionar negocio...</option>
                 {businesses.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.category_display})</option>)}
@@ -245,6 +383,7 @@ export default function AdminDashboard() {
                   <p className="text-xs text-blue-500 font-semibold mb-1">Token:</p>
                   <p className="font-mono text-sm break-all text-gray-800 select-all">{generatedToken}</p>
                   <button onClick={() => { navigator.clipboard.writeText(generatedToken); toast.success('Copiado') }} className="mt-2 text-xs text-blue-600 hover:underline">📋 Copiar</button>
+                  
                 </div>
               )}
             </div>
@@ -254,7 +393,10 @@ export default function AdminDashboard() {
         {/* PEDIDOS */}
         {tab === 'orders' && (
           <div className="flex flex-col gap-3">
-            <h2 className="font-bold text-gray-900 mb-2">Todos los pedidos</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-bold text-gray-900">Todos los pedidos ({orders.length})</h2>
+              <button onClick={loadOrders} className="text-xs text-orange-500 font-semibold hover:underline">Recargar</button>
+            </div>
             {orders.length === 0 ? (
               <div className="text-center py-16 text-gray-400"><p className="text-4xl mb-2">📦</p><p>Sin pedidos aún</p></div>
             ) : orders.map((order) => (
@@ -264,19 +406,283 @@ export default function AdminDashboard() {
                     <span className="font-bold text-gray-900">Pedido #{order.id}</span>
                     <span className="ml-3 text-xs text-gray-400">{new Date(order.created_at).toLocaleString('es-BO')}</span>
                   </div>
-                  <span className="font-bold text-orange-600">Bs. {Number(order.total).toFixed(2)}</span>
+                  <span className="font-bold text-orange-600">Bs. {Number(order.grand_total ?? order.total).toFixed(2)}</span>
                 </div>
                 <p className="text-sm text-gray-600 mb-1">👤 {order.client_name} • 📞 {order.client_phone}</p>
-                <p className="text-sm text-gray-600 mb-3">📍 {order.delivery_address}</p>
-                <div className="flex flex-wrap gap-2">
+                <p className="text-sm text-gray-600 mb-1">📍 {order.delivery_address}</p>
+                <p className="text-xs text-gray-400 mb-3">
+                  Anillo {order.ring_number ?? '—'} • Envío Bs. {Number(order.shipping_cost).toFixed(2)} • Pago: {order.payment_method_display}
+                </p>
+                <div className="flex flex-wrap gap-2 mb-3">
                   {order.business_orders?.map((bo) => (
                     <span key={bo.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">
                       {bo.business_name}: <strong>{bo.status_display}</strong>
                     </span>
                   ))}
                 </div>
+                {order.delivery ? (
+                  <p className="text-xs text-green-600 font-semibold">🛵 Repartidor asignado</p>
+                ) : (
+                  <div className="flex items-center gap-2 border-t pt-3">
+                    <select
+                      value={assignSelection[order.id] ?? ''}
+                      onChange={(e) => setAssignSelection({ ...assignSelection, [order.id]: e.target.value })}
+                      className="flex-1 px-3 py-2 rounded-xl border border-gray-300 text-xs focus:outline-none focus:border-orange-400"
+                    >
+                      <option value="">Asignar repartidor...</option>
+                      {deliveries.filter((d) => d.status === 'disponible').map((d) => (
+                        <option key={d.id} value={d.user_id}>{d.full_name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => handleAssignDelivery(order.id)}
+                      className="text-xs bg-orange-500 hover:bg-orange-600 text-white font-bold px-3 py-2 rounded-xl"
+                    >
+                      Asignar
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* REPORTES */}
+        {tab === 'reports' && (() => {
+          const variTag = (pct) => {
+            if (pct === null || pct === undefined) return <span className="text-xs text-gray-400">Sin datos del mes anterior</span>
+            const up = pct >= 0
+            return (
+              <span className={`text-xs font-bold ${up ? 'text-green-600' : 'text-red-500'}`}>
+                {up ? '▲' : '▼'} {Math.abs(pct)}% vs. mes anterior
+              </span>
+            )
+          }
+          return (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h2 className="font-bold text-gray-900">Reportes mensuales</h2>
+                <div className="flex gap-2">
+                  <select value={reportMonth} onChange={(e) => setReportMonth(Number(e.target.value))}
+                    className="px-3 py-2 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400">
+                    {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                  <select value={reportYear} onChange={(e) => setReportYear(Number(e.target.value))}
+                    className="px-3 py-2 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400">
+                    {[now.getFullYear(), now.getFullYear() - 1].map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {loadingReports || !reports ? (
+                <div className="text-center py-16 text-gray-400"><p className="text-4xl mb-2">📊</p><p>Cargando reportes...</p></div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                      <p className="text-xs text-gray-400 mb-1">Pedidos del mes</p>
+                      <p className="font-extrabold text-2xl text-gray-900">{reports.total_orders}</p>
+                      {variTag(reports.variacion_pedidos_pct)}
+                    </div>
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                      <p className="text-xs text-gray-400 mb-1">Monto total</p>
+                      <p className="font-extrabold text-2xl text-gray-900">Bs. {Number(reports.total_amount).toFixed(2)}</p>
+                      {variTag(reports.variacion_monto_pct)}
+                    </div>
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                      <p className="text-xs text-gray-400 mb-1">Ticket promedio</p>
+                      <p className="font-extrabold text-2xl text-gray-900">Bs. {Number(reports.ticket_promedio).toFixed(2)}</p>
+                      <span className="text-xs text-gray-400">por pedido</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                      <h3 className="font-bold text-gray-900 mb-3">🏪 Pedidos por negocio</h3>
+                      {reports.by_business.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-6">Sin pedidos este mes</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {reports.by_business.map((b) => (
+                            <div key={b.business_id} className="flex items-center justify-between text-sm border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+                              <span className="text-gray-700 truncate">{b.business__name}</span>
+                              <span className="text-gray-500 shrink-0 ml-2">{b.total_pedidos} pedidos · <strong className="text-gray-900">Bs. {Number(b.monto).toFixed(2)}</strong></span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-white rounded-2xl p-4 shadow-sm">
+                      <h3 className="font-bold text-gray-900 mb-3">🔥 Productos más pedidos</h3>
+                      {reports.top_products.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-6">Sin datos este mes</p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {reports.top_products.map((p, i) => (
+                            <div key={p.product_id} className="flex items-center justify-between text-sm border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+                              <span className="text-gray-700 truncate">{i + 1}. {p.product__name}</span>
+                              <span className="text-gray-500 shrink-0 ml-2"><strong className="text-gray-900">{p.total_cantidad}</strong> uds. · Bs. {Number(p.total_monto).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ENVÍOS (pricing) */}
+        {tab === 'pricing' && (
+          <div className="flex flex-col gap-4">
+            <h2 className="font-bold text-gray-900">Configuración de envío</h2>
+
+            {!pricingForm ? (
+              <div className="text-center py-16 text-gray-400"><p className="text-4xl mb-2">⚙️</p><p>Cargando...</p></div>
+            ) : (
+              <>
+                {/* Anillos */}
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  <h3 className="font-bold text-gray-900 mb-3">Precio por anillo</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {rings.map((r, idx) => (
+                      <div key={r.id} className="flex flex-col gap-1.5">
+                        <label className="text-xs text-gray-500">Anillo {r.number}</label>
+                        <div className="flex gap-1">
+                          <input
+                            type="number" step="0.01" value={r.price}
+                            onChange={(e) => {
+                              const next = [...rings]; next[idx] = { ...r, price: e.target.value }; setRings(next)
+                            }}
+                            className="w-full px-2 py-1.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:border-orange-400"
+                          />
+                          <button onClick={() => handleUpdateRingPrice(rings[idx])} className="text-xs bg-orange-500 hover:bg-orange-600 text-white font-bold px-2 rounded-lg">✓</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <form onSubmit={handleSavePricing} className="bg-white rounded-2xl p-4 shadow-sm flex flex-col gap-4">
+                  {/* Switches clima/feriado */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <label className="flex items-center gap-2 flex-1 bg-blue-50 rounded-xl px-3 py-2.5 cursor-pointer">
+                      <input type="checkbox" checked={pricingForm.is_rainy_day}
+                        onChange={(e) => setPricingForm({ ...pricingForm, is_rainy_day: e.target.checked })}
+                        className="accent-blue-500" />
+                      <span className="text-sm text-gray-700">☔ Hoy es día lluvioso</span>
+                    </label>
+                    <label className="flex items-center gap-2 flex-1 bg-blue-50 rounded-xl px-3 py-2.5 cursor-pointer">
+                      <input type="checkbox" checked={pricingForm.is_holiday}
+                        onChange={(e) => setPricingForm({ ...pricingForm, is_holiday: e.target.checked })}
+                        className="accent-blue-500" />
+                      <span className="text-sm text-gray-700">🎉 Hoy es feriado</span>
+                    </label>
+                  </div>
+
+                  {/* Montos de recargo */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <Input label="Recargo lluvia (Bs.)" type="number" step="0.01"
+                      value={pricingForm.rain_surcharge}
+                      onChange={(e) => setPricingForm({ ...pricingForm, rain_surcharge: e.target.value })} />
+                    <Input label="Recargo feriado (Bs.)" type="number" step="0.01"
+                      value={pricingForm.holiday_surcharge}
+                      onChange={(e) => setPricingForm({ ...pricingForm, holiday_surcharge: e.target.value })} />
+                    <Input label="Recargo nocturno (Bs.)" type="number" step="0.01"
+                      value={pricingForm.night_surcharge}
+                      onChange={(e) => setPricingForm({ ...pricingForm, night_surcharge: e.target.value })} />
+                  </div>
+
+                  {/* Horario nocturno */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Inicio horario nocturno</label>
+                      <input type="time" value={pricingForm.night_start}
+                        onChange={(e) => setPricingForm({ ...pricingForm, night_start: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Fin horario nocturno</label>
+                      <input type="time" value={pricingForm.night_end}
+                        onChange={(e) => setPricingForm({ ...pricingForm, night_end: e.target.value })}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400" />
+                    </div>
+                  </div>
+
+                  <Input label="Comisión admin sobre venta (%)" type="number" step="0.01"
+                    value={pricingForm.admin_commission_pct}
+                    onChange={(e) => setPricingForm({ ...pricingForm, admin_commission_pct: e.target.value })} />
+
+                  {/* QR de pago */}
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">QR de pago del admin</label>
+                    {pricingConfig?.admin_qr_image && !(pricingForm.admin_qr_image instanceof File) && (
+                      <img src={pricingConfig.admin_qr_image} alt="QR actual" className="w-24 h-24 object-contain rounded-lg border mb-2" />
+                    )}
+                    <input type="file" accept="image/*"
+                      onChange={(e) => setPricingForm({ ...pricingForm, admin_qr_image: e.target.files[0] })}
+                      className="text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:bg-orange-50 file:text-orange-600 file:font-medium w-full" />
+                  </div>
+
+                  <Button type="submit" loading={savingPricing}>Guardar configuración</Button>
+                </form>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* PAGOS PENDIENTES */}
+        {tab === 'payouts' && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-gray-900">Pagos pendientes</h2>
+              <button onClick={loadPayouts} className="text-xs text-orange-500 font-semibold hover:underline">Recargar</button>
+            </div>
+
+            {loadingPayouts ? (
+              <div className="text-center py-16 text-gray-400"><p className="text-4xl mb-2">💰</p><p>Cargando...</p></div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  <h3 className="font-bold text-gray-900 mb-3">🏪 A negocios</h3>
+                  {businessPayouts.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">Nada pendiente</p>
+                  ) : businessPayouts.map((b) => (
+                    <div key={b.business_id} className="flex items-center justify-between text-sm border-b border-gray-50 last:border-0 py-2">
+                      <div>
+                        <p className="text-gray-700">{b.business__name}</p>
+                        <p className="text-xs text-gray-400">{b.orders_count} pedidos</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-gray-900">Bs. {Number(b.total_pending).toFixed(2)}</strong>
+                        <button onClick={() => handleMarkBusinessPaid(b.business_id)} className="text-xs bg-green-500 hover:bg-green-600 text-white font-bold px-2 py-1 rounded-lg">Marcar pagado</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="bg-white rounded-2xl p-4 shadow-sm">
+                  <h3 className="font-bold text-gray-900 mb-3">🛵 A repartidores</h3>
+                  {deliveryPayouts.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-6">Nada pendiente</p>
+                  ) : deliveryPayouts.map((d) => (
+                    <div key={d.delivery_id} className="flex items-center justify-between text-sm border-b border-gray-50 last:border-0 py-2">
+                      <div>
+                        <p className="text-gray-700">{d.delivery__first_name} {d.delivery__last_name}</p>
+                        <p className="text-xs text-gray-400">{d.orders_count} pedidos entregados</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <strong className="text-gray-900">Bs. {Number(d.total_pending).toFixed(2)}</strong>
+                        <button onClick={() => handleMarkDeliveryPaid(d.delivery_id)} className="text-xs bg-green-500 hover:bg-green-600 text-white font-bold px-2 py-1 rounded-lg">Marcar pagado</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -51,25 +51,26 @@ const useCartStore = create(
       },
 
       // Construye el mensaje de WhatsApp con el resumen del carrito
-      buildWhatsAppMessage: (clientName, address) => {
+      buildWhatsAppMessage: (clientName, address, orderId, shippingCost = 0, grandTotal = null) => {
         const items = get().items
         const lines = items.map(
           (i) =>
             `• ${i.quantity}x ${i.product.name} (${i.product.business_name}) — Bs. ${(Number(i.product.price) * i.quantity).toFixed(2)}`
         )
-        const total = items
-          .reduce((s, i) => s + Number(i.product.price) * i.quantity, 0)
-          .toFixed(2)
+        const subtotal = items.reduce((s, i) => s + Number(i.product.price) * i.quantity, 0)
+        const total = grandTotal !== null ? Number(grandTotal) : subtotal + Number(shippingCost)
 
         return [
-          '🛒 *NUEVO PEDIDO*',
-          `👤 Cliente: ${clientName}`,
-          `📍 Dirección: ${address}`,
+          orderId ? `*NUEVO PEDIDO #${orderId}*` : '*NUEVO PEDIDO*',
+          `Cliente: ${clientName}`,
+          `Dirección: ${address}`,
           '',
           '*Productos:*',
           ...lines,
           '',
-          `💰 *Total estimado: Bs. ${total}*`,
+          `Subtotal: Bs. ${subtotal.toFixed(2)}`,
+          `Envío: Bs. ${Number(shippingCost).toFixed(2)}`,
+          `*Total: Bs. ${total.toFixed(2)}*`,
         ].join('\n')
       },
     }),

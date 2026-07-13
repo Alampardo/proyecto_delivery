@@ -1,14 +1,17 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 
-import LoginPage        from './pages/auth/LoginPage'
-import RegisterPage     from './pages/auth/RegisterPage'
-import HomePage         from './pages/client/HomePage'
-import CartPage         from './pages/client/CartPage'
-import DeliveryDashboard from './pages/delivery/DeliveryDashboard'
-import AdminDashboard   from './pages/admin/AdminDashboard'
-import OwnerDashboard   from './pages/owner/OwnerDashboard'
-import ProtectedRoute   from './routes/ProtectedRoute'
+import LoginPage          from './pages/auth/LoginPage'
+import RegisterPage       from './pages/auth/RegisterPage'
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
+import ResetPasswordPage  from './pages/auth/ResetPasswordPage'
+import VerifyEmailPage    from './pages/auth/VerifyEmailPage'
+import HomePage           from './pages/client/HomePage'
+import CartPage           from './pages/client/CartPage'
+import DeliveryDashboard  from './pages/delivery/DeliveryDashboard'
+import AdminDashboard     from './pages/admin/AdminDashboard'
+import OwnerDashboard     from './pages/owner/OwnerDashboard'
+import ProtectedRoute     from './routes/ProtectedRoute'
 
 export default function App() {
   return (
@@ -22,10 +25,13 @@ export default function App() {
       />
       <Routes>
         {/* Públicas */}
-        <Route path="/login"    element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/"         element={<HomePage />} />
-        <Route path="/cart"     element={<CartPage />} />
+        <Route path="/login"           element={<LoginPage />} />
+        <Route path="/register"        element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password"  element={<ResetPasswordPage />} />
+        <Route path="/verify-email"    element={<VerifyEmailPage />} />
+        <Route path="/"                element={<HomePage />} />
+        <Route path="/cart"            element={<CartPage />} />
 
         {/* Delivery */}
         <Route path="/delivery" element={

@@ -5,6 +5,8 @@ export const getMyProfile        = ()     => api.get('/delivery/profile/')
 export const updateMyProfile     = (data) => api.patch('/delivery/profile/', data, { headers: { 'Content-Type': 'multipart/form-data' } })
 export const toggleShift         = ()     => api.patch('/delivery/toggle-shift/')
 export const getHistory          = (days) => api.get('/delivery/history/', { params: { days } })
+export const getMyActiveOrders   = ()     => api.get('/delivery/my-orders/')
+export const getMyPayout         = ()     => api.get('/delivery/my-payout/')
 
 // Admin
 export const getDeliveries       = ()           => api.get('/admin/deliveries/')

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import toast from 'react-hot-toast'
-import { getMyProfile, toggleShift, updateMyProfile, getHistory } from '../../api/deliveries'
+import { getMyProfile, toggleShift, updateMyProfile, getHistory, getMyActiveOrders, getMyPayout } from '../../api/deliveries'
+import { useOrdersWebSocket } from '../../hooks/useWebSocket'
 import useAuthStore from '../../stores/useAuthStore'
 import Button from '../../components/ui/Button'
 import Badge from '../../components/ui/Badge'
@@ -22,14 +23,36 @@ export default function DeliveryDashboard() {
   const { user, updateProfile } = useAuthStore()
   const [profile, setProfile]   = useState(null)
   const [orders, setOrders]     = useState([])
+  const [activeOrders, setActiveOrders] = useState([])
+  const [payout, setPayout]     = useState(null)
   const [days, setDays]         = useState(1)
   const [tab, setTab]           = useState('home')
   const [toggling, setToggling] = useState(false)
   const [saving, setSaving]     = useState(false)
   const [editForm, setEditForm] = useState({})
 
-  useEffect(() => { loadProfile() }, [])
+  const loadActiveOrders = useCallback(async () => {
+    try { const { data } = await getMyActiveOrders(); setActiveOrders(data) }
+    catch { toast.error('No se pudieron cargar tus pedidos') }
+  }, [])
+
+  const loadPayout = useCallback(async () => {
+    try { const { data } = await getMyPayout(); setPayout(data) }
+    catch { /* silencioso: no bloquea el resto del panel */ }
+  }, [])
+
+  const handleWsMessage = useCallback((msg) => {
+    if (msg.type === 'order_assigned') {
+      toast.success('¡Nuevo pedido asignado! 📦')
+      loadActiveOrders()
+    }
+  }, [loadActiveOrders])
+
+  useOrdersWebSocket(handleWsMessage, true)
+
+  useEffect(() => { loadProfile(); loadActiveOrders(); loadPayout() }, [])
   useEffect(() => { if (tab === 'history') loadHistory() }, [tab, days])
+  useEffect(() => { if (tab === 'active') loadActiveOrders() }, [tab, loadActiveOrders])
 
   const loadProfile = async () => {
     try {
@@ -90,7 +113,7 @@ export default function DeliveryDashboard() {
       {/* Tabs */}
       <div className="bg-white border-b px-4">
         <div className="max-w-2xl mx-auto flex">
-          {[['home','🏠 Inicio'],['history','📋 Historial'],['profile','👤 Perfil']].map(([key, label]) => (
+          {[['home','🏠 Inicio'],['active','🚚 Mis pedidos'],['history','📋 Historial'],['profile','👤 Perfil']].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -144,6 +167,48 @@ export default function DeliveryDashboard() {
                 </div>
               </div>
             )}
+
+            {/* Ganancia pendiente */}
+            {payout && (
+              <div className="bg-white rounded-2xl p-5 shadow-sm w-full text-center">
+                <p className="text-xs text-gray-400 mb-1">Ganancia pendiente por cobrar</p>
+                <p className="font-extrabold text-2xl text-green-600">Bs. {Number(payout.total_pending).toFixed(2)}</p>
+                <p className="text-xs text-gray-400 mt-1">{payout.orders_count} pedidos entregados sin pagar</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* MIS PEDIDOS (activos) */}
+        {tab === 'active' && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-gray-900">Pedidos asignados</h2>
+              <button onClick={loadActiveOrders} className="text-xs text-orange-500 font-semibold hover:underline">Recargar</button>
+            </div>
+            {activeOrders.length === 0 ? (
+              <div className="text-center py-16 text-gray-400">
+                <p className="text-4xl mb-2">🚚</p>
+                <p>No tienes pedidos asignados por ahora</p>
+              </div>
+            ) : (
+              activeOrders.map((order) => (
+                <div key={order.id} className="bg-white rounded-2xl p-4 shadow-sm">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <p className="font-bold text-gray-900">Pedido #{order.id}</p>
+                      <p className="text-xs text-gray-400">{order.status_display}</p>
+                    </div>
+                    <span className="text-sm font-bold text-green-600">Tu ganancia: Bs. {Number(order.shipping_cost).toFixed(2)}</span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-1">👤 {order.client_name} • 📞 {order.client_phone}</p>
+                  <p className="text-sm text-gray-600 mb-1">📍 {order.delivery_address}</p>
+                  <p className="text-xs text-gray-400">
+                    Anillo {order.ring_number ?? '—'} • Pago: {order.payment_method_display}
+                  </p>
+                </div>
+              ))
+            )}
           </div>
         )}
 
@@ -174,7 +239,7 @@ export default function DeliveryDashboard() {
                       <p className="font-bold text-gray-900">Pedido #{order.id}</p>
                       <p className="text-xs text-gray-400">{new Date(order.created_at).toLocaleString('es-BO')}</p>
                     </div>
-                    <span className="text-sm font-bold text-orange-600">Bs. {Number(order.total).toFixed(2)}</span>
+                    <span className="text-sm font-bold text-orange-600">Bs. {Number(order.grand_total ?? order.total).toFixed(2)}</span>
                   </div>
                   <p className="text-sm text-gray-600 truncate">📍 {order.delivery_address}</p>
                 </div>

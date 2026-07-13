@@ -48,7 +48,7 @@ class DeliveryPanelSerializer(serializers.ModelSerializer):
     class Meta:
         model  = DeliveryProfile
         fields = (
-            'id', 'full_name', 'phone', 'email',
+            'id', 'user_id', 'full_name', 'phone', 'email',
             'license_plate', 'has_ruat',
             'status', 'status_display', 'shift_started_at',
             'whatsapp_url',

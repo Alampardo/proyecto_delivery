@@ -16,7 +16,7 @@ export default function Input({ label, error, className = '', ...props }) {
         `}
         {...props}
       />
-      {error && <p className="text-xs text-red-500">{error}</p>}
+      {error && <p className="text-xs text-red-500">{Array.isArray(error) ? error[0] : error}</p>}
     </div>
   )
 }

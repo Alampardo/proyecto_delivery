@@ -23,8 +23,6 @@ class BusinessViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Business.objects.filter(is_active=True).prefetch_related('schedules', 'products')
 
     def get_serializer_class(self):
-        if self.action == 'list':
-            return BusinessListSerializer
         return BusinessSerializer
 
     def get_queryset(self):

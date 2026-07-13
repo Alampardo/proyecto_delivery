@@ -102,6 +102,60 @@ class DeliveryHistoryView(APIView):
         return Response(OrderSerializer(orders, many=True).data)
 
 
+class DeliveryActiveOrdersView(APIView):
+    """
+    GET /api/delivery/my-orders/
+    Pedidos actualmente asignados al delivery autenticado (aún no entregados).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_delivery:
+            return Response(
+                {'detail': 'Solo los deliverys pueden ver este listado.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        from orders.models import Order
+        from orders.serializers import OrderSerializer
+
+        orders = (
+            Order.objects
+            .filter(delivery=request.user, status__in=[Order.Status.ASSIGNED, Order.Status.IN_ROUTE])
+            .prefetch_related('business_orders__items__product', 'business_orders__business')
+            .order_by('-created_at')
+        )
+        return Response(OrderSerializer(orders, many=True).data)
+
+
+class DeliveryPayoutSummaryView(APIView):
+    """
+    GET /api/delivery/my-payout/
+    Cuánto le debe el admin al delivery autenticado por envíos entregados y no pagados.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_delivery:
+            return Response(
+                {'detail': 'Solo los deliverys pueden ver su saldo.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        from django.db.models import Count, Sum
+
+        from orders.models import Order
+
+        agg = Order.objects.filter(
+            delivery=request.user,
+            status=Order.Status.DELIVERED,
+            is_delivery_paid=False,
+        ).aggregate(total_pending=Sum('shipping_cost'), orders_count=Count('id'))
+
+        return Response({
+            'total_pending': agg['total_pending'] or 0,
+            'orders_count':  agg['orders_count'] or 0,
+        })
+
+
 # ── Endpoints del Administrador ──────────────────────────────────────────────
 
 class AdminDeliveryPanelView(APIView):

@@ -15,6 +15,10 @@ class Order(models.Model):
         DELIVERED    = 'entregado',    'Entregado'
         CANCELLED    = 'cancelado',    'Cancelado'
 
+    class PaymentMethod(models.TextChoices):
+        QR   = 'qr',       'QR'
+        CASH = 'efectivo', 'Efectivo'
+
     client           = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -43,6 +47,27 @@ class Order(models.Model):
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
 
+    # Envío
+    ring             = models.ForeignKey(
+        'pricing.ShippingRing',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='orders',
+        verbose_name='Anillo de envío'
+    )
+    shipping_cost    = models.DecimalField(max_digits=8, decimal_places=2, default=0, verbose_name='Costo de envío')
+    payment_method   = models.CharField(
+        max_length=10, choices=PaymentMethod.choices, default=PaymentMethod.CASH,
+        verbose_name='Método de pago'
+    )
+    rain_applied     = models.BooleanField(default=False, verbose_name='Recargo lluvia aplicado')
+    holiday_applied  = models.BooleanField(default=False, verbose_name='Recargo feriado aplicado')
+    night_applied    = models.BooleanField(default=False, verbose_name='Recargo nocturno aplicado')
+
+    # Pago pendiente al repartidor
+    is_delivery_paid = models.BooleanField(default=False, verbose_name='Envío pagado al repartidor')
+    delivery_paid_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         verbose_name        = 'Pedido'
         verbose_name_plural = 'Pedidos'
@@ -54,6 +79,10 @@ class Order(models.Model):
     def recalculate_total(self):
         self.total = sum(bo.subtotal for bo in self.business_orders.all())
         self.save(update_fields=['total'])
+
+    @property
+    def grand_total(self):
+        return self.total + self.shipping_cost
 
 
 class BusinessOrder(models.Model):
@@ -90,6 +119,12 @@ class BusinessOrder(models.Model):
     handed_at  = models.DateTimeField(null=True, blank=True, verbose_name='Hora de entrega al repartidor')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    # Reparto de dinero con el negocio
+    admin_commission     = models.DecimalField(max_digits=8, decimal_places=2, default=0, verbose_name='Comisión admin')
+    business_payout      = models.DecimalField(max_digits=8, decimal_places=2, default=0, verbose_name='A pagar al negocio')
+    is_paid_to_business  = models.BooleanField(default=False, verbose_name='Pagado al negocio')
+    paid_to_business_at  = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name        = 'Sub-pedido de Negocio'

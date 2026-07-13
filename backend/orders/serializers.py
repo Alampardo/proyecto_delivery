@@ -1,6 +1,8 @@
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from businesses.serializers import ProductSerializer
+from pricing.models import ShippingRing
 from .models import BusinessOrder, Order, OrderItem
 
 
@@ -31,6 +33,7 @@ class BusinessOrderSerializer(serializers.ModelSerializer):
             'id', 'order', 'business', 'business_name',
             'status', 'status_display',
             'subtotal', 'notes',
+            'admin_commission', 'business_payout', 'is_paid_to_business', 'paid_to_business_at',
             'client_name', 'client_phone', 'delivery_address',
             'order_created_at', 'handed_at',
             'created_at', 'updated_at',
@@ -38,6 +41,7 @@ class BusinessOrderSerializer(serializers.ModelSerializer):
         )
         read_only_fields = (
             'business', 'subtotal', 'handed_at',
+            'admin_commission', 'business_payout', 'is_paid_to_business', 'paid_to_business_at',
             'created_at', 'updated_at',
         )
 
@@ -61,13 +65,30 @@ class OrderCreateSerializer(serializers.Serializer):
     client_phone     = serializers.CharField(max_length=20)
     delivery_address = serializers.CharField(max_length=400)
     notes            = serializers.CharField(required=False, allow_blank=True, default='')
+    ring             = serializers.PrimaryKeyRelatedField(queryset=ShippingRing.objects.all())
+    payment_method   = serializers.ChoiceField(choices=Order.PaymentMethod.choices)
     items            = OrderCreateItemSerializer(many=True, min_length=1)
 
     def create(self, validated_data):
         from collections import defaultdict
+
         from django.db import transaction
+        from django.utils import timezone
+
+        from pricing.models import PricingConfig
 
         items_data = validated_data.pop('items')
+        ring       = validated_data.pop('ring')
+        pricing    = PricingConfig.get_solo()
+        is_night   = pricing.is_night(timezone.localtime().time())
+
+        shipping_cost = ring.price
+        if pricing.is_rainy_day:
+            shipping_cost += pricing.rain_surcharge
+        if pricing.is_holiday:
+            shipping_cost += pricing.holiday_surcharge
+        if is_night:
+            shipping_cost += pricing.night_surcharge
 
         with transaction.atomic():
             order = Order.objects.create(
@@ -75,6 +96,12 @@ class OrderCreateSerializer(serializers.Serializer):
                 client_phone     = validated_data['client_phone'],
                 delivery_address = validated_data['delivery_address'],
                 notes            = validated_data.get('notes', ''),
+                ring             = ring,
+                shipping_cost    = shipping_cost,
+                payment_method   = validated_data['payment_method'],
+                rain_applied     = pricing.is_rainy_day,
+                holiday_applied  = pricing.is_holiday,
+                night_applied    = is_night,
             )
 
             # Agrupa los ítems por negocio
@@ -95,8 +122,11 @@ class OrderCreateSerializer(serializers.Serializer):
                         quantity=item['quantity'],
                     )
                     subtotal += oi.subtotal
-                bo.subtotal = subtotal
-                bo.save(update_fields=['subtotal'])
+                commission = round(subtotal * pricing.admin_commission_pct / 100, 2)
+                bo.subtotal         = subtotal
+                bo.admin_commission = commission
+                bo.business_payout  = subtotal - commission
+                bo.save(update_fields=['subtotal', 'admin_commission', 'business_payout'])
                 total += subtotal
 
             order.total = total
@@ -106,8 +136,11 @@ class OrderCreateSerializer(serializers.Serializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
-    business_orders = BusinessOrderSerializer(many=True, read_only=True)
-    status_display  = serializers.CharField(source='get_status_display', read_only=True)
+    business_orders       = BusinessOrderSerializer(many=True, read_only=True)
+    status_display         = serializers.CharField(source='get_status_display', read_only=True)
+    ring_number            = serializers.IntegerField(source='ring.number', read_only=True, default=None)
+    payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
+    grand_total             = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model  = Order
@@ -116,7 +149,21 @@ class OrderSerializer(serializers.ModelSerializer):
             'delivery', 'delivery_address',
             'status', 'status_display',
             'notes', 'total',
+            'ring', 'ring_number', 'shipping_cost', 'grand_total',
+            'payment_method', 'payment_method_display',
+            'rain_applied', 'holiday_applied', 'night_applied',
+            'is_delivery_paid', 'delivery_paid_at',
             'created_at', 'updated_at',
             'business_orders',
         )
-        read_only_fields = ('total', 'created_at', 'updated_at')
+        read_only_fields = (
+            'total', 'shipping_cost', 'rain_applied', 'holiday_applied', 'night_applied',
+            'is_delivery_paid', 'delivery_paid_at', 'created_at', 'updated_at',
+        )
+
+
+class AssignDeliverySerializer(serializers.Serializer):
+    """Valida al asignar un repartidor a un pedido desde el panel admin."""
+    delivery = serializers.PrimaryKeyRelatedField(
+        queryset=get_user_model().objects.filter(role='delivery')
+    )

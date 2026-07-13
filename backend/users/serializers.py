@@ -9,7 +9,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
     """Datos básicos del usuario para respuestas de autenticación."""
     class Meta:
         model  = User
-        fields = ('id', 'email', 'first_name', 'last_name', 'role', 'phone')
+        fields = ('id', 'email', 'first_name', 'last_name', 'role', 'phone', 'is_email_verified')
         read_only_fields = fields
 
 
@@ -70,6 +70,12 @@ class DeliveryRegisterSerializer(serializers.Serializer):
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError('Este email ya está registrado.')
+        return value
+
+    def validate_ci(self, value):
+        from deliveries.models import DeliveryProfile
+        if DeliveryProfile.objects.filter(ci=value).exists():
+            raise serializers.ValidationError('Este carnet de identidad ya está registrado.')
         return value
 
     def validate_registration_code(self, value):
