@@ -18,6 +18,10 @@ const defaultIcon = L.icon({
 
 const LA_PAZ_CENTER = [-16.5, -68.15]
 
+// El GPS del navegador entrega hasta 15+ decimales; el backend solo admite 6
+// (suficiente precisión: ~11cm). Redondear evita el error "no más de 9 dígitos".
+const round6 = (n) => Math.round(n * 1e6) / 1e6
+
 export default function LocationPicker({ value, onChange, height = 260 }) {
   const containerRef = useRef(null)
   const mapRef        = useRef(null)
@@ -39,13 +43,27 @@ export default function LocationPicker({ value, onChange, height = 260 }) {
     const marker = L.marker(center, { icon: defaultIcon, draggable: true }).addTo(map)
     markerRef.current = marker
 
-    const emitChange = (latlng) => onChangeRef.current({ lat: latlng.lat, lng: latlng.lng })
+    const emitChange = (latlng) => onChangeRef.current({ lat: round6(latlng.lat), lng: round6(latlng.lng) })
 
     marker.on('dragend', () => emitChange(marker.getLatLng()))
     map.on('click', (e) => {
       marker.setLatLng(e.latlng)
       emitChange(e.latlng)
     })
+
+    // Si no hay una ubicación ya elegida, intenta localizar automáticamente al abrir el mapa
+    if (!value && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+          marker.setLatLng(latlng)
+          map.setView(latlng, 17)
+          emitChange(latlng)
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000 }
+      )
+    }
 
     return () => map.remove()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -55,7 +73,7 @@ export default function LocationPicker({ value, onChange, height = 260 }) {
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        const latlng = { lat: round6(pos.coords.latitude), lng: round6(pos.coords.longitude) }
         markerRef.current?.setLatLng(latlng)
         mapRef.current?.setView(latlng, 17)
         onChangeRef.current(latlng)
