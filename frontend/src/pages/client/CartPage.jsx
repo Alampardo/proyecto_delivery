@@ -9,6 +9,7 @@ import Navbar from '../../components/layout/Navbar'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
 import Modal from '../../components/ui/Modal'
+import LocationPicker from '../../components/ui/LocationPicker'
 
 const ADMIN_WHATSAPP = import.meta.env.VITE_ADMIN_WHATSAPP ?? '591XXXXXXXXX'
 
@@ -19,6 +20,7 @@ export default function CartPage() {
     name:    user ? `${user.first_name} ${user.last_name}` : '',
     phone:   user?.phone ?? '',
     address: '',
+    location: null, // { lat, lng } marcado en el mapa
   })
 
   const total = items.reduce((s, i) => s + Number(i.product.price) * i.quantity, 0)
@@ -71,6 +73,8 @@ export default function CartPage() {
         client_name:      form.name.trim(),
         client_phone:     form.phone.trim(),
         delivery_address: form.address.trim(),
+        delivery_lat:     form.location?.lat ?? null,
+        delivery_lng:     form.location?.lng ?? null,
         ring:             selectedRing,
         payment_method:   paymentMethod,
         items: items.map((i) => ({ product: i.product.id, quantity: i.quantity })),
@@ -180,6 +184,10 @@ export default function CartPage() {
                   placeholder="Calle, zona, referencia..."
                   value={form.address}
                   onChange={(e) => setForm({ ...form, address: e.target.value })}
+                />
+                <LocationPicker
+                  value={form.location}
+                  onChange={(location) => setForm((f) => ({ ...f, location }))}
                 />
               </div>
             </div>

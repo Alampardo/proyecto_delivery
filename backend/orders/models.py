@@ -36,6 +36,14 @@ class Order(models.Model):
         verbose_name='Delivery asignado'
     )
     delivery_address = models.CharField(max_length=400, verbose_name='Dirección de entrega')
+    delivery_lat     = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name='Latitud de entrega'
+    )
+    delivery_lng     = models.DecimalField(
+        max_digits=9, decimal_places=6, null=True, blank=True,
+        verbose_name='Longitud de entrega'
+    )
     status           = models.CharField(
         max_length=20,
         choices=Status.choices,

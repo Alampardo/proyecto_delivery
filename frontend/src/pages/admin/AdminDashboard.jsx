@@ -45,6 +45,7 @@ export default function AdminDashboard() {
   const [bizModal, setBizModal]         = useState(null) // null | 'create' | business
   const [bizForm, setBizForm]           = useState(emptyBizForm())
   const [savingBiz, setSavingBiz]       = useState(false)
+  const [catalogBusiness, setCatalogBusiness] = useState(null) // negocio cuyo catálogo se está viendo
   const [realtimeEvents, setRealtimeEvents] = useState([])
   const [deliveryFilter, setDeliveryFilter] = useState('all') // 'all' | 'active' | 'inactive'
   const [reports, setReports]         = useState(null)
@@ -342,6 +343,7 @@ export default function AdminDashboard() {
                       </div>
                     </div>
                     <div className="flex flex-col gap-1 shrink-0">
+                      <button onClick={() => setCatalogBusiness(b)} className="text-xs text-orange-500 hover:underline">Ver catálogo</button>
                       <button onClick={() => { setBizForm({...b, schedules: b.schedules?.length ? b.schedules : emptyBizForm().schedules}); setBizModal(b) }} className="text-xs text-blue-500 hover:underline">Editar</button>
                       <button onClick={() => handleDeleteBiz(b.id)} className="text-xs text-red-400 hover:underline">Desactivar</button>
                     </div>
@@ -410,14 +412,38 @@ export default function AdminDashboard() {
                 </div>
                 <p className="text-sm text-gray-600 mb-1">👤 {order.client_name} • 📞 {order.client_phone}</p>
                 <p className="text-sm text-gray-600 mb-1">📍 {order.delivery_address}</p>
+                {order.delivery_lat && order.delivery_lng && (
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${order.delivery_lat}&mlon=${order.delivery_lng}#map=17/${order.delivery_lat}/${order.delivery_lng}`}
+                    target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline mb-1"
+                  >
+                    🗺️ Ver ubicación exacta en el mapa
+                  </a>
+                )}
                 <p className="text-xs text-gray-400 mb-3">
                   Anillo {order.ring_number ?? '—'} • Envío Bs. {Number(order.shipping_cost).toFixed(2)} • Pago: {order.payment_method_display}
                 </p>
-                <div className="flex flex-wrap gap-2 mb-3">
+                <div className="flex flex-col gap-2 mb-3">
                   {order.business_orders?.map((bo) => (
-                    <span key={bo.id} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-lg">
-                      {bo.business_name}: <strong>{bo.status_display}</strong>
-                    </span>
+                    <div key={bo.id} className="bg-gray-50 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-semibold text-gray-800">🏪 {bo.business_name}</span>
+                        <span className="text-xs font-bold text-gray-500">{bo.status_display}</span>
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        {bo.items?.map((it) => (
+                          <div key={it.id} className="flex items-center justify-between text-xs text-gray-600">
+                            <span>{it.quantity}x {it.product_name}</span>
+                            <span>Bs. {Number(it.subtotal).toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-between text-xs font-semibold text-gray-700 border-t border-gray-200 mt-1.5 pt-1.5">
+                        <span>Subtotal</span>
+                        <span>Bs. {Number(bo.subtotal).toFixed(2)}</span>
+                      </div>
+                    </div>
                   ))}
                 </div>
                 {order.delivery ? (
@@ -766,6 +792,30 @@ export default function AdminDashboard() {
             <Button type="submit" className="flex-1" loading={savingBiz}>Guardar</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal catálogo de negocio */}
+      <Modal open={!!catalogBusiness} onClose={() => setCatalogBusiness(null)} title={catalogBusiness ? `Catálogo — ${catalogBusiness.name}` : ''}>
+        <div className="flex flex-col gap-2 max-h-[70vh] overflow-y-auto pr-1">
+          {!catalogBusiness?.products?.length ? (
+            <p className="text-sm text-gray-400 text-center py-8">Este negocio no tiene productos cargados</p>
+          ) : catalogBusiness.products.map((p) => (
+            <div key={p.id} className="flex items-center gap-3 border-b border-gray-50 last:border-0 pb-2 last:pb-0">
+              <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center overflow-hidden shrink-0">
+                {p.image ? <img src={p.image} alt={p.name} className="w-full h-full object-cover" /> : '🍽️'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
+                {p.description && <p className="text-xs text-gray-400 truncate">{p.description}</p>}
+                <p className="text-xs text-gray-500">Stock: {p.stock}</p>
+              </div>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="text-sm font-bold text-orange-600">Bs. {Number(p.price).toFixed(2)}</span>
+                <Badge color={p.is_available ? 'green' : 'gray'}>{p.is_available ? 'Disponible' : 'Agotado'}</Badge>
+              </div>
+            </div>
+          ))}
+        </div>
       </Modal>
     </div>
   )

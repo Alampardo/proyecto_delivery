@@ -18,8 +18,8 @@ export function usePushNotifications() {
   const isSupported = 'serviceWorker' in navigator && 'PushManager' in window
 
   useEffect(() => {
-    if (!isSupported) return
-    // Registra el Service Worker
+    if (!isSupported || import.meta.env.DEV) return
+    // Registra el Service Worker (solo en producción: en dev interfiere con el HMR de Vite)
     navigator.serviceWorker.register('/sw.js').catch(() => {})
     // Verifica si ya hay una suscripción activa
     navigator.serviceWorker.ready.then((reg) =>

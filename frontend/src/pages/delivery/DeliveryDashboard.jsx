@@ -203,6 +203,15 @@ export default function DeliveryDashboard() {
                   </div>
                   <p className="text-sm text-gray-600 mb-1">👤 {order.client_name} • 📞 {order.client_phone}</p>
                   <p className="text-sm text-gray-600 mb-1">📍 {order.delivery_address}</p>
+                  {order.delivery_lat && order.delivery_lng && (
+                    <a
+                      href={`https://www.openstreetmap.org/?mlat=${order.delivery_lat}&mlon=${order.delivery_lng}#map=17/${order.delivery_lat}/${order.delivery_lng}`}
+                      target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline mb-1"
+                    >
+                      🗺️ Ver ubicación exacta en el mapa
+                    </a>
+                  )}
                   <p className="text-xs text-gray-400">
                     Anillo {order.ring_number ?? '—'} • Pago: {order.payment_method_display}
                   </p>

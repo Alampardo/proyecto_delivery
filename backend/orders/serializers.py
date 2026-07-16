@@ -25,6 +25,8 @@ class BusinessOrderSerializer(serializers.ModelSerializer):
     client_name    = serializers.CharField(source='order.client_name', read_only=True)
     client_phone   = serializers.CharField(source='order.client_phone', read_only=True)
     delivery_address = serializers.CharField(source='order.delivery_address', read_only=True)
+    delivery_lat     = serializers.DecimalField(source='order.delivery_lat', max_digits=9, decimal_places=6, read_only=True)
+    delivery_lng     = serializers.DecimalField(source='order.delivery_lng', max_digits=9, decimal_places=6, read_only=True)
     order_created_at = serializers.DateTimeField(source='order.created_at', read_only=True)
 
     class Meta:
@@ -34,7 +36,7 @@ class BusinessOrderSerializer(serializers.ModelSerializer):
             'status', 'status_display',
             'subtotal', 'notes',
             'admin_commission', 'business_payout', 'is_paid_to_business', 'paid_to_business_at',
-            'client_name', 'client_phone', 'delivery_address',
+            'client_name', 'client_phone', 'delivery_address', 'delivery_lat', 'delivery_lng',
             'order_created_at', 'handed_at',
             'created_at', 'updated_at',
             'items',
@@ -64,6 +66,8 @@ class OrderCreateSerializer(serializers.Serializer):
     client_name      = serializers.CharField(max_length=200)
     client_phone     = serializers.CharField(max_length=20)
     delivery_address = serializers.CharField(max_length=400)
+    delivery_lat     = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True, default=None)
+    delivery_lng     = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True, default=None)
     notes            = serializers.CharField(required=False, allow_blank=True, default='')
     ring             = serializers.PrimaryKeyRelatedField(queryset=ShippingRing.objects.all())
     payment_method   = serializers.ChoiceField(choices=Order.PaymentMethod.choices)
@@ -95,6 +99,8 @@ class OrderCreateSerializer(serializers.Serializer):
                 client_name      = validated_data['client_name'],
                 client_phone     = validated_data['client_phone'],
                 delivery_address = validated_data['delivery_address'],
+                delivery_lat     = validated_data.get('delivery_lat'),
+                delivery_lng     = validated_data.get('delivery_lng'),
                 notes            = validated_data.get('notes', ''),
                 ring             = ring,
                 shipping_cost    = shipping_cost,
@@ -146,7 +152,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model  = Order
         fields = (
             'id', 'client', 'client_name', 'client_phone',
-            'delivery', 'delivery_address',
+            'delivery', 'delivery_address', 'delivery_lat', 'delivery_lng',
             'status', 'status_display',
             'notes', 'total',
             'ring', 'ring_number', 'shipping_cost', 'grand_total',
