@@ -207,31 +207,17 @@ class AdminListCodesView(APIView):
 class AdminGenerateBusinessTokenView(APIView):
     """
     POST /api/admin/generate-business-token/
-    Genera un token de registro para el dueño de un negocio específico.
-    Body: { "business": <id> }
+    Genera un token de registro para un nuevo dueño de negocio.
+    El dueño define los datos de su propio negocio al registrarse con este token.
     """
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def post(self, request):
-        from businesses.models import Business, BusinessToken
+        from businesses.models import BusinessToken
         from businesses.serializers import BusinessTokenSerializer
 
-        business_id = request.data.get('business')
-        if not business_id:
-            return Response({'detail': 'El campo "business" es obligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            business = Business.objects.get(pk=business_id)
-        except Business.DoesNotExist:
-            return Response({'detail': 'Negocio no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
-
-        token, created = BusinessToken.objects.get_or_create(business=business)
-        if not created and token.is_used:
-            # Si el token fue usado, crea uno nuevo eliminando el anterior
-            token.delete()
-            token = BusinessToken.objects.create(business=business)
-
+        token = BusinessToken.objects.create()
         return Response(
             BusinessTokenSerializer(token).data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+            status=status.HTTP_201_CREATED,
         )

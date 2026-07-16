@@ -63,7 +63,7 @@ class BusinessListSerializer(serializers.ModelSerializer):
 
 
 class BusinessTokenSerializer(serializers.ModelSerializer):
-    business_name = serializers.CharField(source='business.name', read_only=True)
+    business_name = serializers.CharField(source='business.name', read_only=True, default=None)
 
     class Meta:
         model  = BusinessToken

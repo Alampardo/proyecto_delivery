@@ -2,6 +2,7 @@ from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework.authtoken.models import Token
 
+from businesses.models import Business
 from .models import User
 
 
@@ -125,7 +126,9 @@ class DeliveryRegisterSerializer(serializers.Serializer):
 class OwnerRegisterSerializer(serializers.Serializer):
     """
     Registro del Dueño de Negocio.
-    Requiere el token UUID generado por el administrador para un negocio específico.
+    Requiere un token de comercio válido generado por el administrador;
+    el propio dueño define los datos de su negocio al registrarse, y el
+    negocio queda creado automáticamente.
     """
     email          = serializers.EmailField()
     first_name     = serializers.CharField(max_length=100)
@@ -135,6 +138,12 @@ class OwnerRegisterSerializer(serializers.Serializer):
     password2      = serializers.CharField(write_only=True)
     business_token = serializers.UUIDField()
 
+    business_name     = serializers.CharField(max_length=200)
+    business_category = serializers.ChoiceField(choices=Business.Category.choices)
+    business_address  = serializers.CharField(max_length=300, required=False, allow_blank=True)
+    business_phone    = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    business_whatsapp = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError('Este email ya está registrado.')
@@ -143,7 +152,7 @@ class OwnerRegisterSerializer(serializers.Serializer):
     def validate_business_token(self, value):
         from businesses.models import BusinessToken
         try:
-            token = BusinessToken.objects.select_related('business').get(code=value, is_used=False)
+            token = BusinessToken.objects.get(code=value, is_used=False)
         except BusinessToken.DoesNotExist:
             raise serializers.ValidationError('Token de comercio inválido o ya utilizado.')
         return token
@@ -169,14 +178,22 @@ class OwnerRegisterSerializer(serializers.Serializer):
                 phone      = validated_data.get('phone', ''),
                 role       = User.Role.OWNER,
             )
+            business = Business.objects.create(
+                name     = validated_data['business_name'],
+                category = validated_data['business_category'],
+                address  = validated_data.get('business_address', ''),
+                phone    = validated_data.get('business_phone', ''),
+                whatsapp = validated_data.get('business_whatsapp', ''),
+            )
             BusinessOwnerProfile.objects.create(
                 user     = user,
-                business = token_obj.business,
+                business = business,
             )
-            token_obj.is_used = True
-            token_obj.used_by = user
-            token_obj.used_at = timezone.now()
-            token_obj.save(update_fields=['is_used', 'used_by', 'used_at'])
+            token_obj.business = business
+            token_obj.is_used  = True
+            token_obj.used_by  = user
+            token_obj.used_at  = timezone.now()
+            token_obj.save(update_fields=['business', 'is_used', 'used_by', 'used_at'])
 
         return user
 

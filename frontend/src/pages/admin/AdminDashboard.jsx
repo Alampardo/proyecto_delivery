@@ -39,7 +39,6 @@ export default function AdminDashboard() {
   const [businesses, setBusinesses] = useState([])
   const [generatedCode, setGeneratedCode]   = useState(null)
   const [generatedToken, setGeneratedToken] = useState(null)
-  const [selectedBusiness, setSelectedBusiness] = useState('')
   const [loadingCode, setLoadingCode]   = useState(false)
   const [loadingToken, setLoadingToken] = useState(false)
   const [bizModal, setBizModal]         = useState(null) // null | 'create' | business
@@ -129,9 +128,8 @@ export default function AdminDashboard() {
   }
 
   const handleGenerateToken = async () => {
-    if (!selectedBusiness) { toast.error('Selecciona un negocio'); return }
     setLoadingToken(true)
-    try { const { data } = await generateBizToken(selectedBusiness); setGeneratedToken(data.code); toast.success('Token generado') }
+    try { const { data } = await generateBizToken(); setGeneratedToken(data.code); toast.success('Token generado') }
     catch { toast.error('Error') } finally { setLoadingToken(false) }
   }
 
@@ -371,14 +369,8 @@ export default function AdminDashboard() {
               )}
             </div>
             <div className="bg-white rounded-2xl p-6 shadow-sm flex flex-col gap-4">
-              <Button type='secundary' size='lg'> </Button>
-
               <h3 className="font-bold text-gray-900">🏪 Token para Dueño</h3>
-              <p className="text-sm text-gray-500">Genera un codigo de registro para un nuevo repartidor.</p>
-              <select value={selectedBusiness} onChange={(e) => setSelectedBusiness(e.target.value)} className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-200">
-                <option value="">Seleccionar negocio...</option>
-                {businesses.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.category_display})</option>)}
-              </select>
+              <p className="text-sm text-gray-500">Genera un token de registro para un nuevo dueño de negocio. El dueño define los datos de su negocio al registrarse.</p>
               <Button onClick={handleGenerateToken} loading={loadingToken} variant="secondary">Generar token</Button>
               {generatedToken && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">

@@ -37,7 +37,8 @@ class BusinessToken(models.Model):
         Business,
         on_delete=models.CASCADE,
         related_name='registration_token',
-        verbose_name='Negocio asociado'
+        verbose_name='Negocio asociado',
+        null=True, blank=True,
     )
     is_used    = models.BooleanField(default=False, verbose_name='Usado')
     used_by    = models.OneToOneField(
@@ -57,7 +58,8 @@ class BusinessToken(models.Model):
 
     def __str__(self):
         status = 'Usado' if self.is_used else 'Disponible'
-        return f'Token [{self.business.name}] — {status}'
+        name = self.business.name if self.business else 'Sin asignar'
+        return f'Token [{name}] — {status}'
 
     @property
     def short_code(self):

@@ -11,6 +11,12 @@ const TABS = [
   { key: 'owner',    label: '🏪 Mi Negocio', desc: 'Requiere token de comercio' },
 ]
 
+const BUSINESS_CATEGORIES = [
+  { value: 'restaurante', label: 'Restaurante' },
+  { value: 'farmacia',    label: 'Farmacia' },
+  { value: 'encomienda',  label: 'Encomienda' },
+]
+
 export default function RegisterPage() {
   const [tab, setTab]           = useState('client')
   const [loading, setLoading]   = useState(false)
@@ -22,7 +28,8 @@ export default function RegisterPage() {
     email: '', first_name: '', last_name: '', phone: '',
     password: '', password2: '',
     registration_code: '', birth_date: '', ci: '', drivers_license: '', license_plate: '',
-    business_token: '',
+    business_token: '', business_name: '', business_category: 'restaurante',
+    business_address: '', business_phone: '', business_whatsapp: '',
   })
 
   const f = (field) => ({
@@ -41,7 +48,7 @@ export default function RegisterPage() {
         ? { email: form.email, first_name: form.first_name, last_name: form.last_name, phone: form.phone, password: form.password, password2: form.password2 }
         : tab === 'delivery'
         ? { email: form.email, first_name: form.first_name, last_name: form.last_name, phone: form.phone, password: form.password, password2: form.password2, registration_code: form.registration_code, birth_date: form.birth_date, ci: form.ci, drivers_license: form.drivers_license, license_plate: form.license_plate }
-        : { email: form.email, first_name: form.first_name, last_name: form.last_name, phone: form.phone, password: form.password, password2: form.password2, business_token: form.business_token }
+        : { email: form.email, first_name: form.first_name, last_name: form.last_name, phone: form.phone, password: form.password, password2: form.password2, business_token: form.business_token, business_name: form.business_name, business_category: form.business_category, business_address: form.business_address, business_phone: form.business_phone, business_whatsapp: form.business_whatsapp }
 
       await apiFn(payload)
       setEmailSent(form.email)
@@ -152,6 +159,24 @@ export default function RegisterPage() {
             <div className="flex flex-col gap-3 pt-2 border-t border-gray-100">
               <p className="text-xs text-orange-500 font-semibold uppercase tracking-wide">Token de tu comercio</p>
               <Input label="Token de Comercio (Admin)" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...f('business_token')} required />
+
+              <p className="text-xs text-orange-500 font-semibold uppercase tracking-wide pt-2">Datos de tu negocio</p>
+              <Input label="Nombre del negocio" placeholder="Mi Restaurante" {...f('business_name')} required />
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Categoría</label>
+                <select
+                  value={form.business_category}
+                  onChange={(e) => setForm({ ...form, business_category: e.target.value })}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gray-300 text-sm focus:outline-none focus:border-orange-400"
+                >
+                  {BUSINESS_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <Input label="Dirección" placeholder="Calle, zona..." {...f('business_address')} />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Teléfono del negocio" {...f('business_phone')} />
+                <Input label="WhatsApp del negocio" {...f('business_whatsapp')} />
+              </div>
             </div>
           )}
 
