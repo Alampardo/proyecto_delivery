@@ -36,7 +36,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "80:80"
+      - "8081:80"
     volumes:
       - media_data:/usr/share/nginx/media:ro
       - static_data:/usr/share/nginx/static:ro
