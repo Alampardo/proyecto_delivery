@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 
@@ -14,6 +15,14 @@ import OwnerDashboard     from './pages/owner/OwnerDashboard'
 import ProtectedRoute     from './routes/ProtectedRoute'
 
 export default function App() {
+  // Registra el Service Worker para toda la app (instalable como PWA en cualquier
+  // página, no solo donde se usan notificaciones push). Solo en producción: en
+  // dev interfiere con el HMR de Vite.
+  useEffect(() => {
+    if (import.meta.env.DEV || !('serviceWorker' in navigator)) return
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  }, [])
+
   return (
     <BrowserRouter>
       <Toaster

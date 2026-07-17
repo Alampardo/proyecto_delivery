@@ -19,9 +19,8 @@ export function usePushNotifications() {
 
   useEffect(() => {
     if (!isSupported || import.meta.env.DEV) return
-    // Registra el Service Worker (solo en producción: en dev interfiere con el HMR de Vite)
-    navigator.serviceWorker.register('/sw.js').catch(() => {})
-    // Verifica si ya hay una suscripción activa
+    // El Service Worker ya se registra globalmente en App.jsx.
+    // Aquí solo esperamos a que esté listo para revisar si hay una suscripción activa.
     navigator.serviceWorker.ready.then((reg) =>
       reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub))
     )
