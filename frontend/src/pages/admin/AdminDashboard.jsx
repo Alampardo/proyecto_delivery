@@ -160,6 +160,13 @@ export default function AdminDashboard() {
     catch (err) { toast.error(err.response?.data?.detail ?? 'Error al eliminar') }
   }
 
+  const handleReactivateBiz = async (id) => {
+    const fd = new FormData()
+    fd.append('is_active', 'true')
+    try { await updateAdminBusiness(id, fd); toast.success('Negocio reactivado'); loadBusinesses() }
+    catch { toast.error('Error al reactivar') }
+  }
+
   const handleSavePricing = async (e) => {
     e.preventDefault()
     setSavingPricing(true)
@@ -349,7 +356,10 @@ export default function AdminDashboard() {
                     <div className="flex flex-col gap-1 shrink-0">
                       <button onClick={() => setCatalogBusiness(b)} className="text-xs text-orange-500 hover:underline">Ver catálogo</button>
                       <button onClick={() => { setBizForm({...b, schedules: b.schedules?.length ? b.schedules : emptyBizForm().schedules}); setBizModal(b) }} className="text-xs text-blue-500 hover:underline">Editar</button>
-                      <button onClick={() => handleDeleteBiz(b.id)} className="text-xs text-red-400 hover:underline">Desactivar</button>
+                      {b.is_active
+                        ? <button onClick={() => handleDeleteBiz(b.id)} className="text-xs text-red-400 hover:underline">Desactivar</button>
+                        : <button onClick={() => handleReactivateBiz(b.id)} className="text-xs text-green-600 font-semibold hover:underline">Reactivar</button>
+                      }
                       <button onClick={() => handleHardDeleteBiz(b.id)} className="text-xs text-red-600 font-semibold hover:underline">Eliminar</button>
                     </div>
                   </div>
