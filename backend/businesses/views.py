@@ -94,3 +94,23 @@ class AdminBusinessViewSet(viewsets.ModelViewSet):
         business.is_active = False
         business.save(update_fields=['is_active'])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['delete'], url_path='delete-permanent')
+    def delete_permanent(self, request, pk=None):
+        """
+        DELETE /api/admin/businesses/{id}/delete-permanent/
+        Elimina el negocio de forma permanente (productos, horarios, perfil de
+        dueño y token quedan en cascada). Falla si el negocio tiene pedidos
+        asociados — en ese caso hay que desactivarlo en vez de eliminarlo.
+        """
+        from django.db.models.deletion import ProtectedError
+
+        business = self.get_object()
+        try:
+            business.delete()
+        except ProtectedError:
+            return Response(
+                {'detail': 'No se puede eliminar: el negocio tiene pedidos registrados. Desactívalo en su lugar.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)

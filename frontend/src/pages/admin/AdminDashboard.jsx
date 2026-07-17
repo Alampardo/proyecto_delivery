@@ -5,7 +5,7 @@ import {
   getAdminOrders, getAdminReports, assignDelivery,
   getBusinessPayouts, markBusinessPaid, getDeliveryPayouts, markDeliveryPaid,
 } from '../../api/orders'
-import { getAdminBusinesses, createAdminBusiness, updateAdminBusiness, deleteAdminBusiness } from '../../api/adminBusinesses'
+import { getAdminBusinesses, createAdminBusiness, updateAdminBusiness, deleteAdminBusiness, hardDeleteAdminBusiness } from '../../api/adminBusinesses'
 import { getAdminPricing, updateAdminPricing, getAdminRings, updateRing } from '../../api/pricing'
 import { useOrdersWebSocket } from '../../hooks/useWebSocket'
 import Badge from '../../components/ui/Badge'
@@ -152,6 +152,12 @@ export default function AdminDashboard() {
     if (!confirm('¿Desactivar este negocio?')) return
     try { await deleteAdminBusiness(id); toast.success('Negocio desactivado'); loadBusinesses() }
     catch { toast.error('Error') }
+  }
+
+  const handleHardDeleteBiz = async (id) => {
+    if (!confirm('¿Eliminar este negocio de forma PERMANENTE? Esta acción no se puede deshacer.')) return
+    try { await hardDeleteAdminBusiness(id); toast.success('Negocio eliminado'); loadBusinesses() }
+    catch (err) { toast.error(err.response?.data?.detail ?? 'Error al eliminar') }
   }
 
   const handleSavePricing = async (e) => {
@@ -344,6 +350,7 @@ export default function AdminDashboard() {
                       <button onClick={() => setCatalogBusiness(b)} className="text-xs text-orange-500 hover:underline">Ver catálogo</button>
                       <button onClick={() => { setBizForm({...b, schedules: b.schedules?.length ? b.schedules : emptyBizForm().schedules}); setBizModal(b) }} className="text-xs text-blue-500 hover:underline">Editar</button>
                       <button onClick={() => handleDeleteBiz(b.id)} className="text-xs text-red-400 hover:underline">Desactivar</button>
+                      <button onClick={() => handleHardDeleteBiz(b.id)} className="text-xs text-red-600 font-semibold hover:underline">Eliminar</button>
                     </div>
                   </div>
                 ))}

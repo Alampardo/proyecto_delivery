@@ -5,3 +5,4 @@ export const getAdminBusiness    = (id)        => api.get(`/admin/businesses/${i
 export const createAdminBusiness = (data)      => api.post('/admin/businesses/', data, { headers: { 'Content-Type': 'multipart/form-data' } })
 export const updateAdminBusiness = (id, data)  => api.patch(`/admin/businesses/${id}/`, data, { headers: { 'Content-Type': 'multipart/form-data' } })
 export const deleteAdminBusiness = (id)        => api.delete(`/admin/businesses/${id}/`)
+export const hardDeleteAdminBusiness = (id)    => api.delete(`/admin/businesses/${id}/delete-permanent/`)
